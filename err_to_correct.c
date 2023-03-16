@@ -14,7 +14,8 @@
 static struct i2c_client *client;
 static int i2cread_regs_8(struct i2c_client *client);
 static int i2cwrite_regs_8(struct i2c_client *client);
-static int i2cset_passthrough(struct i2c_client *client)
+static int i2cset_passthrough(struct i2c_client *client);
+static int i2cset_dual_pair(struct i2c_client *client)
 
 static int i2crdreg_open(struct inode *inode, struct file *file)
 {
@@ -63,7 +64,7 @@ static int i2cread_regs_8(struct i2c_client *client)
 	u8 buf[1];
 	u8 chip_id = 0;
 	int i = 0;
-	u8 reg[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11};
+	u8 reg[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x03, 0x5b};
 	//client->addr = 0x0c;
 	u32 paddr = 0x0c;
 	struct i2c_msg msg[2];
@@ -72,7 +73,7 @@ static int i2cread_regs_8(struct i2c_client *client)
 
 	printk(KERN_CRIT"This is %s \n", __func__);
 
-	for(i = 0; i < 5; i++)
+	for(i = 0; i < 7; i++)
 	{
 		buf[0] = reg[i];
 		msg[0].addr  = addr;
@@ -107,9 +108,9 @@ static int i2cwrite_regs_8(struct i2c_client *client)
 	u32 paddr = 0x0c;
 	struct i2c_msg msg;
 	u8 addr;
-	//GPIO0-3,GPIO5-8相应的寄存器地址，增加使能IIC的寄存器地址
+	//GPIO0-3,GPIO5-8相应的寄存器地址，增加使能IIC的寄存器地址0x03
 	u8 addr_arr[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x03};
-	//GPIO0-3,GPIO5-8的值设置为输出且拉高，增加使能IIC的寄存器值
+	//GPIO0-3,GPIO5-8的值设置为输出且拉高，增加使能IIC的寄存器值0xDA
 	u8 val_arr[]  = {0x2A, 0x99, 0x09, 0x99, 0x99, 0xDA}; 
 	addr = paddr&0xff;
 	printk(KERN_CRIT"This is %s \n", __func__);
@@ -166,6 +167,41 @@ static int i2cset_passthrough(struct i2c_client *client)
 	if(ret < 0)
 	{
 		printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", ret);
+		return ret;
+	}
+	printk(KERN_CRIT"default regadd: %02x---val is %02x", reg, val);
+	return 0;
+}
+
+
+//写寄存器函数：设置Dual双通道模式并设置为双绞线模式
+static int i2cset_dual_pair(struct i2c_client *client)
+{
+	int ret;
+	int i = 0;
+	u8 buf[2];
+	u8 chip_id = 0;
+	//client->addr = 0x0c;
+	u32 paddr = 0x0c;
+	struct i2c_msg msg;
+	u8 addr;
+	//设置Dual双通道，双绞线模式相应的寄存器地址
+	u8 reg = 0x5B;
+	//设置Dual双通道，双绞线模式相应寄存器的值
+	u8 val = 0x23;
+	addr = paddr&0xff;
+	printk(KERN_CRIT"This is %s \n", __func__);
+    buf[0] = reg;
+	buf[1] = val;
+	msg.addr  = addr;
+	msg.flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
+	msg.buf   = buf;             //寄存器地址和要写的地址
+	msg.len   = sizeof(buf);     //len为buf的大小，单位是字节
+
+	ret = i2c_transfer(client->adapter, &msg, 1);
+	if(ret < 0)
+	{
+		printk(KERN_CRIT"read regs from DUAL has been failed, ret = %d \r\n", ret);
 		return ret;
 	}
 	printk(KERN_CRIT"default regadd: %02x---val is %02x", reg, val);
