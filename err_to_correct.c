@@ -18,6 +18,7 @@ static int i2cset_passthrough(struct i2c_client *client);
 static int i2cset_dual_pair(struct i2c_client *client);
 static int set_gpio_input(struct i2c_client *client);
 static int link_detect_8(struct i2c_client *client);
+static int rd_ODLI_frequency(struct i2c_client *client);
 
 static int i2crdreg_open(struct inode *inode, struct file *file)
 {
@@ -59,12 +60,12 @@ static struct miscdevice misc = {
 	.fops  = &i2crdreg_fops
 };
 
-//读寄存器函数
+//读寄存器函数:GPIO 0-3,5-8 状态位判断GPIO pin状态
 static int i2cread_regs_8(struct i2c_client *client)
 {
 	int ret = 0;
 	u8 buf[1];
-	u8 chip_id = 0;
+	u8 level = 0;
 	int i = 0;
 	//u8 reg[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11};
 	//读取GPIO 0-3,5-8 状态位的寄存器地址
@@ -95,8 +96,9 @@ static int i2cread_regs_8(struct i2c_client *client)
 			printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", ret);
 			return ret;
 		}
-		chip_id = buf[0];
-		printk(KERN_CRIT"default regadd: 0x%02x---chip_id is 0x%02x", reg[i], chip_id);
+		level = buf[0];
+		printk(KERN_CRIT"hex  default regadd: 0x%02x---chip_id is 0x%02x", reg[i], level);
+		printk(KERN_CRIT"bin  GPIO0-3 and GPIO5-8 : %ld", level);
 	}
 	return 0;
 }
@@ -106,8 +108,7 @@ static int link_detect_8(struct i2c_client *client)
 {
 	int ret = 0;
 	u8 buf[1];
-	u8 chip_id = 0;
-	int i = 0;
+	u8 link_status = 0;
 	//读取LINK状态位的寄存器地址
 	u8 reg = 0x0c;
 	//client->addr = 0x0c;
@@ -118,7 +119,49 @@ static int link_detect_8(struct i2c_client *client)
 
 	printk(KERN_CRIT"This is %s \n", __func__);
 
-	buf[0] = reg[i];
+	buf[0] = reg;
+	msg[0].addr  = addr;
+	msg[0].flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
+	msg[0].buf   = buf;             //寄存器地址
+	msg[0].len   = sizeof(buf);     //len为buf的大小，单位是字节
+
+	msg[1].addr  = addr;
+	msg[1].flags = client->flags | IIC_RD;   //flags为1，是读，表示buf是我们要接收的数据
+	msg[1].buf   = buf;          //寄存器的值
+	msg[1].len   = 1;
+	ret = i2c_transfer(client->adapter, msg, 2);
+	if(ret < 0)
+	{
+		printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", ret);
+		return ret;
+	}
+	link_status = buf[0];
+	printk(KERN_CRIT"default regadd: 0x%02x---link_status is 0x%02x", reg, link_status);
+	if(link_status == 5)
+	{
+		printk(KERN_CRIT"link is detected");
+	}
+	else printk(KERN_CRIT"link is not detected, link_status is %d", link_status);
+	return 0;
+}
+
+//读寄存器函数: 当前 OpenLDI 的输入视频频率
+static int rd_ODLI_frequency(struct i2c_client *client)
+{
+	int ret = 0;
+	u8 buf[1];
+	u8 chip_id = 0;
+	//读取OpenLDI输入视频频率的寄存器地址
+	u8 reg = 0x5F;
+	//client->addr = 0x0c;
+	u32 paddr = 0x0c;
+	struct i2c_msg msg[2];
+	u8 addr;
+	addr = paddr&0xff;
+
+	printk(KERN_CRIT"This is %s \n", __func__);
+
+	buf[0] = reg;
 	msg[0].addr  = addr;
 	msg[0].flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
 	msg[0].buf   = buf;             //寄存器地址
@@ -135,7 +178,7 @@ static int link_detect_8(struct i2c_client *client)
 		return ret;
 	}
 	chip_id = buf[0];
-	printk(KERN_CRIT"default regadd: 0x%02x---chip_id is 0x%02x", reg[i], chip_id);
+	printk(KERN_CRIT"default regadd: 0x%02x---chip_id is 0x%02x", reg, chip_id);
 	return 0;
 }
 
@@ -145,7 +188,6 @@ static int i2cwrite_regs_8(struct i2c_client *client)
 	int ret;
 	int i = 0;
 	u8 buf[2];
-	u8 chip_id = 0;
 	//client->addr = 0x0c;
 	u32 paddr = 0x0c;
 	struct i2c_msg msg;
@@ -185,9 +227,7 @@ static int i2cwrite_regs_8(struct i2c_client *client)
 static int i2cset_passthrough(struct i2c_client *client)
 {
 	int ret;
-	int i = 0;
 	u8 buf[2];
-	u8 chip_id = 0;
 	//client->addr = 0x0c;
 	u32 paddr = 0x0c;
 	struct i2c_msg msg;
@@ -215,14 +255,11 @@ static int i2cset_passthrough(struct i2c_client *client)
 	return 0;
 }
 
-
 //写寄存器函数：设置Dual双通道模式并设置为双绞线模式
 static int i2cset_dual_pair(struct i2c_client *client)
 {
 	int ret;
-	int i = 0;
 	u8 buf[2];
-	u8 chip_id = 0;
 	//client->addr = 0x0c;
 	u32 paddr = 0x0c;
 	struct i2c_msg msg;
@@ -256,7 +293,6 @@ static int set_gpio_input(struct i2c_client *client)
 	int ret;
 	int i = 0;
 	u8 buf[2];
-	u8 chip_id = 0;
 	//client->addr = 0x0c;
 	u32 paddr = 0x0c;
 	struct i2c_msg msg;
@@ -314,9 +350,8 @@ static int rdreg_remove(struct i2c_client *i2c_client, const struct i2c_device_i
 static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct device *dev = &client->dev;
-   	int ret;
 	
-    printk(KERN_CRIT"This is %s \n", __func__);
+	printk(KERN_CRIT"This is %s \n", __func__);
 	//将GPIO 0-3,GPIO 5-8设置输入模式
 	set_gpio_input(client);
 	//读取GPIO0-3,GPIO5-8相应寄存器的值并打印
@@ -341,13 +376,13 @@ static struct i2c_driver rdreg_driver = {
 /*驱动入口函数*/
 static int rdreg_driver_init(void)
 {
-    	int ret;
-    	//注册i2c_driver
-    	ret = i2c_add_driver(&rdreg_driver);
-    	if(ret < 0) {
-        	printk(KERN_CRIT"i2c_add_driver is error \n");
-			return ret;
-		}
+	int ret;
+	//注册i2c_driver
+	ret = i2c_add_driver(&rdreg_driver);
+	if(ret < 0) {
+		printk(KERN_CRIT"i2c_add_driver is error \n");
+		return ret;
+	}
 	printk(KERN_CRIT"This is %s", __func__);
 	return 0;
 }
