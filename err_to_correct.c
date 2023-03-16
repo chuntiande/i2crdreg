@@ -15,7 +15,8 @@ static struct i2c_client *client;
 static int i2cread_regs_8(struct i2c_client *client);
 static int i2cwrite_regs_8(struct i2c_client *client);
 static int i2cset_passthrough(struct i2c_client *client);
-static int i2cset_dual_pair(struct i2c_client *client)
+static int i2cset_dual_pair(struct i2c_client *client);
+static int set_gpio_input(struct i2c_client *client);
 
 static int i2crdreg_open(struct inode *inode, struct file *file)
 {
@@ -64,7 +65,9 @@ static int i2cread_regs_8(struct i2c_client *client)
 	u8 buf[1];
 	u8 chip_id = 0;
 	int i = 0;
-	u8 reg[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x03, 0x5b};
+	//u8 reg[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11};
+	//读取GPIO 0-3,5-8 状态位的寄存器地址
+	u8 reg[] = {0x1c, 0x1d};
 	//client->addr = 0x0c;
 	u32 paddr = 0x0c;
 	struct i2c_msg msg[2];
@@ -73,7 +76,7 @@ static int i2cread_regs_8(struct i2c_client *client)
 
 	printk(KERN_CRIT"This is %s \n", __func__);
 
-	for(i = 0; i < 7; i++)
+	for(i = 0; i < 2; i++)
 	{
 		buf[0] = reg[i];
 		msg[0].addr  = addr;
@@ -208,6 +211,48 @@ static int i2cset_dual_pair(struct i2c_client *client)
 	return 0;
 }
 
+//写寄存器函数：设置GPIO状态位并判断引脚状态
+static int set_gpio_input(struct i2c_client *client)
+{
+	int ret;
+	int i = 0;
+	u8 buf[2];
+	u8 chip_id = 0;
+	//client->addr = 0x0c;
+	u32 paddr = 0x0c;
+	struct i2c_msg msg;
+	u8 addr;
+	//GPIO0-3,GPIO5-8相应的寄存器地址
+	u8 addr_arr[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11};
+	//GPIO0-3,GPIO5-8的值设置为输入
+	u8 val_arr[]  = {0x23, 0x33, 0x03, 0x33, 0x33}; 
+	addr = paddr&0xff;
+	printk(KERN_CRIT"This is %s \n", __func__);
+
+	for(i = 0; i < 5; i++)
+	{
+		u8 reg = addr_arr[i];
+		u8 val = val_arr[i];
+		
+    	buf[0] = reg;
+		buf[1] = val;
+		msg.addr  = addr;
+		msg.flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
+		msg.buf   = buf;             //寄存器地址和要写的地址
+		msg.len   = sizeof(buf);     //len为buf的大小，单位是字节
+
+		ret = i2c_transfer(client->adapter, &msg, 1);
+		if(ret < 0)
+		{
+			printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", ret);
+			return ret;
+		}
+		printk(KERN_CRIT"default regadd: 0xf%d---val is %02x", i, val);
+	}
+
+	return 0;
+}
+
 //与设备树的compatible相匹配
 static const struct of_device_id rdreg_of_match[] = {
 	{.compatible = "hsae, rdreg-i2c", 0},
@@ -233,10 +278,11 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
    	int ret;
 	
     printk(KERN_CRIT"This is %s \n", __func__);
-	//将GPIO0-3,GPIO5-8设置输出模式并拉高
-	i2cwrite_regs_8(client);
+	//将GPIO 0-3,GPIO 5-8设置输入模式
+	set_gpio_input(client);
 	//读取GPIO0-3,GPIO5-8相应寄存器的值并打印
     i2cread_regs_8(client);
+	
     return 0;
 }
 //定义一个i2c_driver结构体
