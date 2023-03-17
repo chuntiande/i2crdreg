@@ -14,12 +14,17 @@
 static struct i2c_client *client;
 static int i2cread_regs_8(struct i2c_client *client);
 static int i2cwrite_regs_8(struct i2c_client *client);
+
 static int i2cset_passthrough(struct i2c_client *client);
+
 static int i2cset_dual_pair(struct i2c_client *client);
 static int set_gpio_input(struct i2c_client *client);
 static int link_detect_8(struct i2c_client *client);
 static int rd_ODLI_frequency(struct i2c_client *client);
 static int read_video_frequency(struct i2c_client *client);
+static int i2cset_reset_bit(struct i2c_client *client);
+static int read_reset_bit_8(struct i2c_client *client);
+static int set_iis_diable(struct i2c_client *client);
 
 static int i2crdreg_open(struct inode *inode, struct file *file)
 {
@@ -66,7 +71,7 @@ static int i2cread_regs_8(struct i2c_client *client)
 {
 	int ret = 0;
 	u8 buf[1];
-	u8 level = 0;
+	u8 level[] = {0};
 	int i = 0;
 	//u8 reg[] = {0x0d, 0x0e, 0x0f, 0x10, 0x11};
 	//读取GPIO 0-3,5-8 状态位的寄存器地址
@@ -97,9 +102,8 @@ static int i2cread_regs_8(struct i2c_client *client)
 			printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", ret);
 			return ret;
 		}
-		level = buf[0];
-		printk(KERN_CRIT"hex  default regadd: 0x%02x---chip_id is 0x%02x", reg[i], level);
-		printk(KERN_CRIT"bin  GPIO0-3 and GPIO5-8 : %ld", level);
+		level[i] = buf[0];
+		printk(KERN_CRIT"hex  default regadd: 0x%02x---level is 0x%02x,binary number is %ld", reg[i], level[i], level[i]);
 	}
 	return 0;
 }
@@ -243,6 +247,43 @@ static int link_detect_8(struct i2c_client *client)
 	return 0;
 }
 
+//读寄存器函数：读取开机寄存器复位是否设置成功
+static int read_reset_bit_8(struct i2c_client *client)
+{
+	int ret = 0;
+	u8 buf[1];
+	u8 reset_bit = 0;
+	//读取LINK状态位的寄存器地址
+	u8 reg = 0x01;
+	//client->addr = 0x0c;
+	u32 paddr = 0x0c;
+	struct i2c_msg msg[2];
+	u8 addr;
+	addr = paddr&0xff;
+
+	printk(KERN_CRIT"\n This is %s ", __func__);
+
+	buf[0] = reg;
+	msg[0].addr  = addr;
+	msg[0].flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
+	msg[0].buf   = buf;             //寄存器地址
+	msg[0].len   = sizeof(buf);     //len为buf的大小，单位是字节
+
+	msg[1].addr  = addr;
+	msg[1].flags = client->flags | IIC_RD;   //flags为1，是读，表示buf是我们要接收的数据
+	msg[1].buf   = buf;          //寄存器的值
+	msg[1].len   = 1;
+	ret = i2c_transfer(client->adapter, msg, 2);
+	if(ret < 0)
+	{
+		printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", ret);
+		return ret;
+	}
+	reset_bit = buf[0];
+	printk(KERN_CRIT"default regadd: 0x%02x---reset_bit is 0x%02x", reg, reset_bit);
+	return 0;
+}
+
 //写寄存器函数:将GPIO输出高电平
 static int i2cwrite_regs_8(struct i2c_client *client)
 {
@@ -313,6 +354,75 @@ static int i2cset_passthrough(struct i2c_client *client)
 		return ret;
 	}
 	printk(KERN_CRIT"default regadd: 0x%02x---val is 0x%02x", reg, val);
+	return 0;
+}
+
+//写寄存器函数：设置IIS功能关闭
+static int set_iis_diable(struct i2c_client *client)
+{
+	int ret;
+	u8 buf[2];
+	int i = 0;
+	//client->addr = 0x0c;
+	u32 paddr = 0x0c;
+	struct i2c_msg msg;
+	u8 addr;
+	//设置寄存器复位芯片相应的寄存器地址
+	u8 reg[] = {0x54, };
+	//设置bit1为复位模式，清除整个数据块
+	u8 iis_disabled = {0x00, };
+	addr = paddr&0xff;
+	printk(KERN_CRIT"\n This is %s ", __func__);
+	for(i = 0;i < ;i++)
+	{
+
+	}
+    buf[0] = reg;
+	buf[1] = reset;
+	msg.addr  = addr;
+	msg.flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
+	msg.buf   = buf;             //寄存器地址和要写的地址
+	msg.len   = sizeof(buf);     //len为buf的大小，单位是字节
+
+	ret = i2c_transfer(client->adapter, &msg, 1);
+	if(ret < 0)
+	{
+		printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", reset);
+		return ret;
+	}
+	printk(KERN_CRIT"default regadd: 0x%02x---val is 0x%02x", reg, reset);
+	return 0;
+}
+
+//写寄存器函数：设置开机使用寄存器复位芯片
+static int i2cset_reset_bit(struct i2c_client *client)
+{
+	int ret;
+	u8 buf[2];
+	//client->addr = 0x0c;
+	u32 paddr = 0x0c;
+	struct i2c_msg msg;
+	u8 addr;
+	//设置寄存器复位芯片相应的寄存器地址
+	u8 reg = 0x01;
+	//设置bit1为复位模式，清除整个数据块
+	u8 reset = 0x02;
+	addr = paddr&0xff;
+	printk(KERN_CRIT"\n This is %s ", __func__);
+    buf[0] = reg;
+	buf[1] = reset;
+	msg.addr  = addr;
+	msg.flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
+	msg.buf   = buf;             //寄存器地址和要写的地址
+	msg.len   = sizeof(buf);     //len为buf的大小，单位是字节
+
+	ret = i2c_transfer(client->adapter, &msg, 1);
+	if(ret < 0)
+	{
+		printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", reset);
+		return ret;
+	}
+	printk(KERN_CRIT"default regadd: 0x%02x---val is 0x%02x", reg, reset);
 	return 0;
 }
 
@@ -413,18 +523,28 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 	struct device *dev = &client->dev;
 	
 	printk(KERN_CRIT"\n This is %s ", __func__);
+
+	//写寄存器函数：设置IIS功能关闭
+	//set_iis_diable(client);
+
+	//写寄存器函数：设置开机使用寄存器复位芯片
+	i2cset_reset_bit(client);
+	//读取设置复位是否成功
+	read_reset_bit_8(client);
+
+	//检测link状态
+	//link_detect_8(client);
+
 	//将GPIO 0-3,GPIO 5-8设置输入模式
 	//set_gpio_input(client);
-
 	//读取GPIO0-3,GPIO5-8相应寄存器的值并打印
     //i2cread_regs_8(client);
 
-	//检测link状态
-	link_detect_8(client);
+	//写寄存器函数：设置Dual双通道模式并设置为双绞线模式
+	//i2cset_dual_pair(client);
 
 	//读取OLDI的输入视频频率
-	read_video_frequency(client);
-	
+	//read_video_frequency(client);
     return 0;
 }
 //定义一个i2c_driver结构体
