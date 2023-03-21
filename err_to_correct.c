@@ -5,6 +5,14 @@
 //#include <linux/stdlib.h>
 //#include <linux/stdio.h>
 #include <linux/delay.h>
+//API for device_node
+#include <linux/fs.h>
+//API for libgpio
+#include <linux/gpio.h>
+//API for device tree
+#include <linux/of_platform.h>
+#include <linux/of_gpio.h>
+#include <linux/of_device.h>
 
 #define IIC_WR  0
 #define IIC_RD  1
@@ -25,6 +33,7 @@ static int read_video_frequency(struct i2c_client *client);
 static int i2cset_reset_bit(struct i2c_client *client);
 static int read_reset_bit_8(struct i2c_client *client);
 static int set_iis_diable(struct i2c_client *client);
+static int set_pdb_enable(struct i2c_client *client);
 
 static int i2crdreg_open(struct inode *inode, struct file *file)
 {
@@ -373,12 +382,13 @@ static int set_iis_diable(struct i2c_client *client)
 	u8 iis_disabled = {0x00, };
 	addr = paddr&0xff;
 	printk(KERN_CRIT"\n This is %s ", __func__);
+	/*
 	for(i = 0;i < ;i++)
 	{
 
-	}
+	}*/
     buf[0] = reg;
-	buf[1] = reset;
+	buf[1] = iis_disabled;
 	msg.addr  = addr;
 	msg.flags = client->flags;   //flags为0，是写，表示buf是我们要发送的数据
 	msg.buf   = buf;             //寄存器地址和要写的地址
@@ -387,10 +397,10 @@ static int set_iis_diable(struct i2c_client *client)
 	ret = i2c_transfer(client->adapter, &msg, 1);
 	if(ret < 0)
 	{
-		printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", reset);
+		printk(KERN_CRIT"read regs from i2c has been failed, ret = %d \r\n", iis_disabled);
 		return ret;
 	}
-	printk(KERN_CRIT"default regadd: 0x%02x---val is 0x%02x", reg, reset);
+	printk(KERN_CRIT"default regadd: 0x%02x---val is 0x%02x", reg, iis_disabled);
 	return 0;
 }
 
@@ -499,6 +509,45 @@ static int set_gpio_input(struct i2c_client *client)
 	return 0;
 }
 
+//写寄存器函数：上电控制PDB使能
+static int set_pdb_enable(struct i2c_client *client)
+{
+	int ret;
+	int control_gpio = 0;
+	struct device_node *test_device_node;
+
+	//获得设备节点
+	test_device_node = of_find_node_by_path("/con_test");
+	if(test_device_node == NULL)
+	{
+		printk(KERN_CRIT"of_find_node_by_path is error \n");
+		return -1;
+	}
+	printk(KERN_ERR"of_find_node_by_path is succeed \n");
+	//使用of_get_named_gpio函数获取GPIO编号，此函数会将设备树中<&port4b 9 GPIO_ACTIVE_HIGH>的属性信息转换为对应的GPIO编号
+	control_gpio = of_get_named_gpio(test_device_node, "control-gpio", 0);
+	if(control_gpio < 0)
+	{
+		printk(KERN_CRIT"of_get_named_gpio is error \n");
+		return -1;
+	}
+	printk(KERN_CRIT"control_gpio is %d \n", control_gpio);
+	//申请一个GPIO管脚
+	ret = gpio_request(control_gpio, "control");
+	/*if(ret < 0)
+	{
+		printk(KERN_CRIT"gpio_request is error \n");
+	}*/
+	printk(KERN_CRIT"gpio_request is succeed \n");
+	//设置某个GPIO为输出，并且设置默认输出值
+	gpio_direction_output(control_gpio, 0);
+	printk(KERN_CRIT"gpio_direction is succeed\n");
+	//设置输出低电平
+	gpio_set_value(control_gpio, 0);
+    
+	return 0;
+}
+
 //与设备树的compatible相匹配
 static const struct of_device_id rdreg_of_match[] = {
 	{.compatible = "hsae, rdreg-i2c", 0},
@@ -524,16 +573,19 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 	
 	printk(KERN_CRIT"\n This is %s ", __func__);
 
+	//设置PDB上电使能
+	set_pdb_enable(client);
+
 	//写寄存器函数：设置IIS功能关闭
 	//set_iis_diable(client);
 
 	//写寄存器函数：设置开机使用寄存器复位芯片
-	i2cset_reset_bit(client);
+	//i2cset_reset_bit(client);
 	//读取设置复位是否成功
-	read_reset_bit_8(client);
+	//read_reset_bit_8(client);
 
 	//检测link状态
-	//link_detect_8(client);
+	link_detect_8(client);
 
 	//将GPIO 0-3,GPIO 5-8设置输入模式
 	//set_gpio_input(client);
@@ -545,6 +597,7 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 
 	//读取OLDI的输入视频频率
 	//read_video_frequency(client);
+
     return 0;
 }
 //定义一个i2c_driver结构体
