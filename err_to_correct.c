@@ -293,6 +293,54 @@ static int read_reset_bit_8(struct i2c_client *client)
 	return 0;
 }
 
+//读寄存器函数：判断不同芯片的型号
+static int check_chip_id(struct i2c_client *client)
+{
+	int ret = 0;
+	u8 chip_id[] = {0};
+	int i = 0;
+	struct i2c_msg msg[2];
+	u8 buf[1];
+	u16 reg[] = {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5};
+	u32 paddr = 0x0c;
+	u8 addr;
+
+	//paddr = i2c_get_clientdata(client);
+	//dev_info(&client->dev, "%s get addr from client 0x%x", __func__, *paddr);
+	addr = paddr&0xff;
+	printk(KERN_CRIT"this is %s ", __func__);
+	for(i=0;i<6;i++)
+	{
+		buf[0] = reg[i];
+		msg[0].addr = addr;
+		msg[0].flags = client->flags;
+		msg[0].buf = buf;
+		msg[0].len = sizeof(buf);
+		msg[1].addr = addr;
+		msg[1].flags = client->flags | I2C_M_RD;
+		msg[1].buf = buf;
+		msg[1].len = 1;
+		
+		ret = i2c_transfer(client->adapter, msg, 2);
+		if (ret < 0) {
+			dev_err(&client->dev, "%s:chip 0x%02x error: reg=0x%02x ret %d\n",
+					__func__,   msg[0].addr, reg[i], ret);
+			return ret;
+		}
+		chip_id[i] = buf[0];
+		dev_err(&client->dev, "ub947 dev chipid = 0x%02x\n", chip_id[i]);
+		printk(KERN_CRIT"reg=0x%02x, val=0x%02x \n, chip_id=%c", reg[i], chip_id[i], chip_id[i]);
+	}
+	//打印芯片型号
+	/*
+	for(i = 0; i < 6; i++)
+	{
+		printk(KERN_CRIT" the chip is %c", chip_id[i], chip_id[i]);
+	}
+	*/
+	return 0;
+}
+
 //写寄存器函数:将GPIO输出高电平
 static int i2cwrite_regs_8(struct i2c_client *client)
 {
@@ -571,7 +619,7 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 {
 	struct device *dev = &client->dev;
 	
-	printk(KERN_CRIT"\n This is %s ", __func__);
+	printk(KERN_CRIT"This is %s ", __func__);
 
 	//设置PDB上电使能
 	set_pdb_enable(client);
@@ -585,7 +633,7 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 	//read_reset_bit_8(client);
 
 	//检测link状态
-	link_detect_8(client);
+	//link_detect_8(client);
 
 	//将GPIO 0-3,GPIO 5-8设置输入模式
 	//set_gpio_input(client);
@@ -597,6 +645,9 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 
 	//读取OLDI的输入视频频率
 	//read_video_frequency(client);
+
+	//判断不同芯片的型号
+	check_chip_id(client);
 
     return 0;
 }
@@ -620,7 +671,7 @@ static int rdreg_driver_init(void)
 	//注册i2c_driver
 	ret = i2c_add_driver(&rdreg_driver);
 	if(ret < 0) {
-		printk(KERN_CRIT"i2c_add_driver is error \n");
+		printk(KERN_CRIT"i2c_add_driver is error");
 		return ret;
 	}
 	printk(KERN_CRIT"This is %s", __func__);
