@@ -208,7 +208,7 @@ static int link_detect_8(struct i2c_client *client)
 	printk(KERN_CRIT"\n This is %s ", __func__);
 
 	i2cread_regs_8(client, reg, &link_status);
-	if(link_status == 5)
+	if(link_status ^ 0x05 == 0)
 	{
 		printk(KERN_CRIT"link is detected,  link_status = 1");
 	}
@@ -243,7 +243,14 @@ static void hex_to_str(char *hex, int hex_len, char *str)
 static int check_chip_id(struct i2c_client *client)
 {
 	u8 chip_id;
-	u8 chip_arr[] = {0};
+	u8 chip_arr[6] = {0};
+	u8 othch[4][6] = {
+		{'_', 'U', 'B', '9', '4', '7'}, 
+		{'_', 'U', 'B', '9', '4', '8'}, 
+		{'_', 'U', 'B', '9', '4', '9'}, 
+		{'_', 'U', 'H', '9', '4', '7'}
+	};
+
 	int i;
 	u8 reg;
 	u16 chip_addr[] = {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5};
@@ -254,7 +261,27 @@ static int check_chip_id(struct i2c_client *client)
 		reg = chip_addr[i];
 		i2cread_regs_8(client, reg, &chip_id);
 		chip_arr[i] = chip_id;
-		printk(KERN_CRIT"chip_id [0x%02x]=%c", reg, chip_id);
+		printk(KERN_CRIT"chip_id [0x%02x]=%c, chip_arr[%d]=%c", reg, chip_id, i, chip_arr[i]);
+	}
+	for(i = 0; i < 4; i++)
+	{
+		for(int j = 0; j < 6; j++)
+		{
+			//printk(KERN_CRIT"chip_arr[%d] is %c, othch[%d][%d] is %c", j, chip_arr[j], i, j, othch[i][j]);
+			if((char)chip_arr[j] == othch[i][j])
+			{
+				if(j == 5)
+				{
+					printk(KERN_CRIT"This chip is ");
+					for(int k = 0;k < 6; k++)
+					{
+						printk(KERN_CONT"%c", othch[i][k]);
+					}
+					break;
+				}
+			}
+			else break;
+		}
 	}
 	//strcat_s();
 	return 0;
@@ -428,7 +455,7 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 	printk(KERN_CRIT"This is %s ", __func__);
 
 	//设置PDB上电使能
-	set_pdb_enable(client);
+	//set_pdb_enable(client);
 	//获取reg的值，即获取设备地址
 	ret = of_property_read_u32(dev->of_node, "reg", &paddr);
 	if (ret)
@@ -437,26 +464,26 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 	printk(KERN_CRIT"It has capture the address of slave_address");
 	//printk(KERN_CRIT"dev->of_node is %s\n", *(dev->of_node));
 	//设置开机使用寄存器复位芯片
-	i2cset_reset_bit(client);
+	//i2cset_reset_bit(client);
 
 	//将GPIO 0-3,GPIO 5-8设置输入模式
-	set_gpio_input(client);
+	//set_gpio_input(client);
 
 	//设置IIS功能关闭
 	//set_iis_diable(client);
 
 	//设置Dual双通道模式并设置为双绞线模式
-	i2cset_dual_pair(client);
+	//i2cset_dual_pair(client);
 
 	//读取开机寄存器相应的寄存器值是否为复位
-	read_reset_bit_8(client);
+	//read_reset_bit_8(client);
 
 	//检测link状态
 	link_detect_8(client);
 
 	//读取GPIO0-3,GPIO5-8相应寄存器的值并打印
 	//读取OLDI的输入视频频率
-	read_video_frequency(client);
+	//read_video_frequency(client);
 
 	//判断不同芯片的型号
 	check_chip_id(client);
