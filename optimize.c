@@ -208,7 +208,7 @@ static int link_detect_8(struct i2c_client *client)
 	printk(KERN_CRIT"\n This is %s ", __func__);
 
 	i2cread_regs_8(client, reg, &link_status);
-	if(link_status ^ 0x05 == 0)
+	if(link_status & 0x01 == 1)
 	{
 		printk(KERN_CRIT"link is detected,  link_status = 1");
 	}
@@ -228,23 +228,13 @@ static int read_reset_bit_8(struct i2c_client *client)
 	return 0;
 }
 
-//十六进制转换为字符串
-static void hex_to_str(char *hex, int hex_len, char *str)
-{
-	int i, pos = 0;
-	for(i = 0;i < hex_len; i++)
-	{
-		printk(str+pos,"%02x", hex[i]);
-		pos+=2;
-	}
-}
-
 //判断不同芯片的型号
 static int check_chip_id(struct i2c_client *client)
 {
 	u8 chip_id;
+	int len, len_line, len_column;
 	u8 chip_arr[6] = {0};
-	u8 othch[4][6] = {
+	u8 othch[][6] = {
 		{'_', 'U', 'B', '9', '4', '7'}, 
 		{'_', 'U', 'B', '9', '4', '8'}, 
 		{'_', 'U', 'B', '9', '4', '9'}, 
@@ -255,25 +245,27 @@ static int check_chip_id(struct i2c_client *client)
 	u8 reg;
 	u16 chip_addr[] = {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5};
 	printk(KERN_CRIT"this is %s ", __func__);
-
-	for(i = 0;i < 6; i++)
+	len_line = sizeof(othch) / sizeof(othch[0]);
+	len_column = sizeof(othch[0]) / sizeof(char);
+				
+	for(i = 0;i < len_column; i++)
 	{
 		reg = chip_addr[i];
 		i2cread_regs_8(client, reg, &chip_id);
 		chip_arr[i] = chip_id;
 		printk(KERN_CRIT"chip_id [0x%02x]=%c, chip_arr[%d]=%c", reg, chip_id, i, chip_arr[i]);
 	}
-	for(i = 0; i < 4; i++)
+	for(i = 0; i < len_line; i++)
 	{
-		for(int j = 0; j < 6; j++)
+		for(int j = 0; j < len_column; j++)
 		{
 			//printk(KERN_CRIT"chip_arr[%d] is %c, othch[%d][%d] is %c", j, chip_arr[j], i, j, othch[i][j]);
 			if((char)chip_arr[j] == othch[i][j])
 			{
-				if(j == 5)
+				if(j == (len_line - 1))
 				{
 					printk(KERN_CRIT"This chip is ");
-					for(int k = 0;k < 6; k++)
+					for(int k = 0;k < len_column; k++)
 					{
 						printk(KERN_CONT"%c", othch[i][k]);
 					}
@@ -283,7 +275,6 @@ static int check_chip_id(struct i2c_client *client)
 			else break;
 		}
 	}
-	//strcat_s();
 	return 0;
 }
 
