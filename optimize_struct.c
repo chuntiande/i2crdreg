@@ -266,14 +266,13 @@ static int i2cdelay(struct wr_poweron *wr)
 static int powerup(struct i2c_client *client)
 {
 	int i;
+	struct wr_poweron *wr;
 	int len;
 	len = sizeof(para_write) / (3 * sizeof(u8));
 	printk(KERN_CRIT"len is %d\n", len);
 	for(i = 0; i < len; i++)
 	{
-		printk(KERN_CRIT"para_write[%d].reg is 0x%02x", i, para_write[i].reg);
-		printk(KERN_CRIT"para_val[%d].val is 0x%02x", i, para_write[i].val);
-		struct wr_poweron *wr = &para_write[i];
+		wr = &para_write[i];
 		printk(KERN_CRIT"write reg and val");
 		i2cwrite_regs_8(client, wr);
 	}
@@ -284,6 +283,7 @@ static int powerup(struct i2c_client *client)
 static int read_status(struct i2c_client *client)
 {
     int len, len_line, len_column, end_len;
+	u8 chip_val[6] = {0};
     u8 bin_arr[] = {0};
 	u8 chip_arr[6] = {0};
 	struct rd_poweron *rd;
@@ -294,15 +294,14 @@ static int read_status(struct i2c_client *client)
 		{'_', 'U', 'H', '9', '4', '7'}
 	};
 	int i = 0;
-    int m, k, j;
+    int m, k, j, n;
     u8 video_frequency = 0;
     len = sizeof(para_read) / (2 * sizeof(u8));
 	printk(KERN_CRIT"This is %s ", __func__);
-
+	printk(KERN_CRIT"len is %d ", len);
 	for(i = 0; i < len; i++)
 	{
-		rd->reg = para_read[i].reg;
-		rd->val = para_read[i].val;
+		rd = &para_read[i];
 		i2cread_regs_8(client, rd);
 		switch(i) {
             case 0: 
@@ -339,27 +338,27 @@ static int read_status(struct i2c_client *client)
 			case 4: 
 				//检测link状态位
                 printk(KERN_CRIT"Link_status");
-                if((rd->val & 0x01) == 1)
+                if(((rd->val) & 0x01) == 1)
                 {
                     printk(KERN_CRIT"link is detected,  link_status = 1");
                 }
                 else printk(KERN_CRIT"link is not detected, link_status is 0");
                 break;
-            case 5:  printk(KERN_CRIT"CHIP0  %c", rd->val); break;
-            case 6:  printk(KERN_CRIT"CHIP1  %c", rd->val); break;
-            case 7:  printk(KERN_CRIT"CHIP2  %c", rd->val); break;
-            case 8:  printk(KERN_CRIT"CHIP3  %c", rd->val); break;
-            case 9: printk(KERN_CRIT"CHIP4  %c", rd->val);  break;
-            case 10: printk(KERN_CRIT"CHIP5  %c", rd->val);
+            case 5:  printk(KERN_CRIT"CHIP0  %c", rd->val); chip_val[0] = rd->val;break;
+            case 6:  printk(KERN_CRIT"CHIP1  %c", rd->val); chip_val[1] = rd->val;break;
+            case 7:  printk(KERN_CRIT"CHIP2  %c", rd->val); chip_val[2] = rd->val;break;
+            case 8:  printk(KERN_CRIT"CHIP3  %c", rd->val); chip_val[3] = rd->val;break;
+            case 9:  printk(KERN_CRIT"CHIP4  %c", rd->val); chip_val[4] = rd->val;break;
+            case 10: printk(KERN_CRIT"CHIP5  %c", rd->val); chip_val[5] = rd->val;
 				//判断芯片型号
 				len_line = sizeof(othch) / sizeof(othch[0]);
 				len_column = sizeof(othch[0]) / sizeof(char);
-				for(i = 0; i < len_line; i++)
+				for(n = 0; n < len_line; n++)
 				{
 					for(int j = 0; j < len_column; j++)
 					{
-						printk(KERN_CRIT"chip_arr[%d] is %c, othch[%d][%d] is %c", j, chip_arr[j], i, j, othch[i][j]);
-						if((char)(rd->val) == othch[i][j])
+						//printk(KERN_CRIT"chip_arr[%d] is %c, othch[%d][%d] is %c", j, chip_arr[j], n, j, othch[n][j]);
+						if((char)(chip_val[j]) == othch[n][j])
 						{
 							end_len = len_column - 1;
 							if(j == end_len)
@@ -367,7 +366,7 @@ static int read_status(struct i2c_client *client)
 								printk(KERN_CRIT"This chip is ");
 								for(int k = 0;k < len_column; k++)
 								{
-									printk(KERN_CONT"%c", othch[i][k]);
+									printk(KERN_CONT"%c", othch[n][k]);
 								}
 								break;
 							}
@@ -471,9 +470,9 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 	printk(KERN_CRIT"The device address has been obtained");
 	
 	//开机初始化
-	powerup(client);
+	//powerup(client);
 	//读取指定值，判断
-	//read_status(client);
+	read_status(client);
     return 0;
 }
 //定义一个i2c_driver结构体
