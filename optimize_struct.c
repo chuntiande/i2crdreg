@@ -14,19 +14,25 @@
 #include <linux/of_gpio.h>
 #include <linux/of_device.h>
 #include <linux/string.h>
-
+//API for ioctl
+#include <linux/ioctl.h>
+//API for malloc
 #include <linux/slab.h>
 #include <linux/types.h>
+//API for copy_to_user copy_from_user
+#include <linux/uaccess.h>
+//API for pthread_create
+#include <linux/pthread.h>
 
 #define IIC_WR  0
 #define IIC_RD  1
-#define UB948   "_UB948"
-#define UB947   "_UB947"
-#define UH947   "_UH947"
-#define UB949   "_UB949"
+
 #define DEVICE_NAME "i2crdreg"
+#define CMD_I2CRD _IO('R', 1)
+#define CMD_I2CWR _IO('W', 0)
 
 static u32 *dtsaddr;
+static u8 lock_status = 0;
 static struct i2c_client *client;
 static struct wr_poweron{
 	u8 reg;
@@ -105,12 +111,28 @@ static ssize_t i2crdreg_write(struct file *filp, const char __user *buf,
 	return 0;
 }
 
+static long i2crdreg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	printk(KERN_CRIT"This is %s \n", __func__);
+	switch (cmd)
+	{
+		case CMD_I2CRD:
+			printk(KERN_CRIT"I2C READ  \n");
+			break;
+		case CMD_I2CWR:
+			printk(KERN_CRIT"I2C WRITE \n");
+			break;
+	}
+	return 0;
+}
+
 static struct file_operations i2crdreg_fops = {
 	.owner   =   THIS_MODULE,
 	.open    =   i2crdreg_open,
 	.release =   i2crdreg_close,
 	.write   =   i2crdreg_write,
-	.read    =   i2crdreg_read
+	.read    =   i2crdreg_read,
+	.unlocked =  i2crdreg_ioctl
 };
 
 static struct miscdevice misc = {
@@ -119,7 +141,7 @@ static struct miscdevice misc = {
 	.fops  = &i2crdreg_fops
 };
 
-//写寄存器函数:8位
+//写寄存器函数: 8位
 static int i2cwrite_regs_8(struct i2c_client *client, struct wr_poweron *wr)
 {
 	int ret;
@@ -184,7 +206,7 @@ static int i2cread_regs_8(struct i2c_client *client, struct rd_poweron *rd)
 	return 0;
 }
 
-//写寄存器函数:16位
+//写寄存器函数: 16位
 static int i2cwrite_regs_16(struct i2c_client *client, struct wr_poweron *wr)
 {
 	int ret;
@@ -282,6 +304,7 @@ static int powerup(struct i2c_client *client)
 //读指定数组，判断相应状态与值
 static int read_status(struct i2c_client *client)
 {
+	pthread_t sta;
     int len, len_line, len_column, end_len;
 	u8 chip_val[6] = {0};
     u8 bin_arr[] = {0};
@@ -294,6 +317,7 @@ static int read_status(struct i2c_client *client)
 		{'_', 'U', 'H', '9', '4', '7'}
 	};
 	int i = 0;
+	int ret;
     int m, k, j, n;
     u8 video_frequency = 0;
     len = sizeof(para_read) / (2 * sizeof(u8));
@@ -338,11 +362,9 @@ static int read_status(struct i2c_client *client)
 			case 4: 
 				//检测link状态位
                 printk(KERN_CRIT"Link_status");
-                if(((rd->val) & 0x01) == 1)
-                {
-                    printk(KERN_CRIT"link is detected,  link_status = 1");
-                }
-                else printk(KERN_CRIT"link is not detected, link_status is 0");
+                lock_status = rd->val;
+				ret = pthread_create(&sta, NULL, judge_lock_status, NULL);
+				if
                 break;
             case 5:  printk(KERN_CRIT"CHIP0  %c", rd->val); chip_val[0] = rd->val;break;
             case 6:  printk(KERN_CRIT"CHIP1  %c", rd->val); chip_val[1] = rd->val;break;
@@ -379,6 +401,21 @@ static int read_status(struct i2c_client *client)
         }
 	}
 	return 0;
+}
+
+//新建线程：判断LOCK状态
+static void *judge_lock_status(void *arg)
+{
+
+	printk(KERN_CRIT"create pthread : judge the status of lock");
+	if((lock_status & 0x01) == 1)
+	{
+		printk(KERN_CRIT"link is detected,  link_status = 1");
+	}
+	else 
+	{
+		printk(KERN_CRIT"link is not detected, link_status is 0");
+	}
 }
 
 //设置IIS功能关闭
