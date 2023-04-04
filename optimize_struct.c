@@ -22,7 +22,10 @@
 //API for copy_to_user copy_from_user
 #include <linux/uaccess.h>
 //API for pthread_create
-#include <linux/pthread.h>
+#include <linux/kthread.h>
+//#include <unistd.h>
+//#include <stdlib.h>
+//#include <string.h>
 
 #define IIC_WR  0
 #define IIC_RD  1
@@ -71,6 +74,7 @@ struct rd_poweron para_read[] = {
 	{0xf5, 0}
 };
 
+static struct task_struct *status_task;
 static struct wr_poweron write = {0, 0, 0};
 static struct rd_poweron read  = {0, 0};
 
@@ -84,6 +88,7 @@ static int set_pdb_enable(struct i2c_client *client);
 static int powerup(struct i2c_client *client);
 static int read_status(struct i2c_client *client);
 static int i2cdelay(struct wr_poweron *wr);
+static int *judge_lock_status(void *arg);
 
 static int i2crdreg_open(struct inode *inode, struct file *file)
 {
@@ -132,7 +137,7 @@ static struct file_operations i2crdreg_fops = {
 	.release =   i2crdreg_close,
 	.write   =   i2crdreg_write,
 	.read    =   i2crdreg_read,
-	.unlocked =  i2crdreg_ioctl
+	.unlocked_ioctl =  i2crdreg_ioctl
 };
 
 static struct miscdevice misc = {
@@ -304,7 +309,6 @@ static int powerup(struct i2c_client *client)
 //读指定数组，判断相应状态与值
 static int read_status(struct i2c_client *client)
 {
-	pthread_t sta;
     int len, len_line, len_column, end_len;
 	u8 chip_val[6] = {0};
     u8 bin_arr[] = {0};
@@ -326,6 +330,7 @@ static int read_status(struct i2c_client *client)
 	for(i = 0; i < len; i++)
 	{
 		rd = &para_read[i];
+		//进入读寄存器函数
 		i2cread_regs_8(client, rd);
 		switch(i) {
             case 0: 
@@ -363,8 +368,7 @@ static int read_status(struct i2c_client *client)
 				//检测link状态位
                 printk(KERN_CRIT"Link_status");
                 lock_status = rd->val;
-				ret = pthread_create(&sta, NULL, judge_lock_status, NULL);
-				if
+				msleep(5);
                 break;
             case 5:  printk(KERN_CRIT"CHIP0  %c", rd->val); chip_val[0] = rd->val;break;
             case 6:  printk(KERN_CRIT"CHIP1  %c", rd->val); chip_val[1] = rd->val;break;
@@ -404,10 +408,11 @@ static int read_status(struct i2c_client *client)
 }
 
 //新建线程：判断LOCK状态
-static void *judge_lock_status(void *arg)
+static int *judge_lock_status(void *arg)
 {
-
+	int timeout = 0;
 	printk(KERN_CRIT"create pthread : judge the status of lock");
+	//在调用kthread_should_stop()后kthread_should_stop返回1，否则返回0
 	if((lock_status & 0x01) == 1)
 	{
 		printk(KERN_CRIT"link is detected,  link_status = 1");
@@ -415,7 +420,17 @@ static void *judge_lock_status(void *arg)
 	else 
 	{
 		printk(KERN_CRIT"link is not detected, link_status is 0");
+		while(!kthread_should_stop() && timeout < 10)
+		{
+			if((lock_status & 0x01) == 1)
+			{
+				printk(KERN_CRIT"Reconnect after disconnection");
+			}
+			timeout++;
+		}
+		msleep(10);
 	}
+	return 0;
 }
 
 //设置IIS功能关闭
@@ -472,7 +487,10 @@ static int set_pdb_enable(struct i2c_client *client)
 
 //与设备树的compatible相匹配
 static const struct of_device_id rdreg_of_match[] = {
-	{.compatible = "hsae, rdreg-i2c", 0},
+	{.compatible = "ti,ub947", 0},
+	{.compatible = "ti,ub948", 0},
+	{.compatible = "ti,ub949", 0},
+	{.compatible = "ti,uh947", 0},
 	{}
 };
 
@@ -508,8 +526,18 @@ static int rdreg_probe(struct i2c_client *client, const struct i2c_device_id *id
 	
 	//开机初始化
 	//powerup(client);
+
 	//读取指定值，判断
 	read_status(client);
+	//创建线程
+	status_task = kthread_run(judge_lock_status, NULL, "judge_lock_status");
+	if(IS_ERR(status_task))
+	{
+		pr_err("Couldn't create status_task\n");
+		ret = PTR_ERR(status_task);
+		status_task = NULL;
+		return ret;
+	}
     return 0;
 }
 //定义一个i2c_driver结构体
@@ -529,13 +557,14 @@ static struct i2c_driver rdreg_driver = {
 static int rdreg_driver_init(void)
 {
 	int ret;
+	printk(KERN_CRIT"This is %s", __func__);
 	//注册i2c_driver
 	ret = i2c_add_driver(&rdreg_driver);
 	if(ret < 0) {
 		printk(KERN_CRIT"i2c_add_driver is error");
 		return ret;
 	}
-	printk(KERN_CRIT"This is %s", __func__);
+	
 	return 0;
 }
 
@@ -543,9 +572,12 @@ static int rdreg_driver_init(void)
 static void rdreg_driver_exit(void)
 {
 	//misc_deregister(&misc);
+	printk(KERN_CRIT"This is %s \n", __func__);
+	//结束线程的运行
+	//printk(KERN_CRIT"kthread_stop");
+	//kthread_stop(status_task);
 	//将前面注册的i2c_driver 也从linux内核中注销掉
 	i2c_del_driver(&rdreg_driver);
-	printk(KERN_CRIT"This is %s \n", __func__);
 }
 
 module_init(rdreg_driver_init);
